@@ -1,11 +1,12 @@
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { useAuth } from "@/hooks/useAuth";
 
 const Signup = () => {
   const [email, setEmail] = useState("");
@@ -13,6 +14,14 @@ const Signup = () => {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [loading, setLoading] = useState(false);
+  const { signUp, user } = useAuth();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (user) {
+      navigate("/");
+    }
+  }, [user, navigate]);
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -24,14 +33,16 @@ const Signup = () => {
     
     setLoading(true);
     
-    // TODO: Implement Supabase authentication
-    console.log("Signup attempt:", { email, password, fullName });
+    const { error } = await signUp(email, password, fullName);
     
-    // Simulate signup for now
-    setTimeout(() => {
-      setLoading(false);
-      toast.success("Account created successfully!");
-    }, 1000);
+    if (error) {
+      console.error("Signup error:", error);
+      toast.error(error.message || "Signup failed");
+    } else {
+      toast.success("Account created successfully! Please check your email to verify your account.");
+    }
+    
+    setLoading(false);
   };
 
   return (
