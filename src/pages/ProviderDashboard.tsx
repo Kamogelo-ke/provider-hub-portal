@@ -1,44 +1,52 @@
 
-import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Link } from "react-router-dom";
 import { Plus, Edit, Eye, Star, TrendingUp } from "lucide-react";
-
-// Mock data - will be replaced with Supabase data
-const mockProviderServices = [
-  {
-    id: 1,
-    title: "Professional House Cleaning",
-    description: "Thorough residential cleaning services with eco-friendly products",
-    category: "Cleaning",
-    status: "active",
-    views: 234,
-    inquiries: 12,
-    rating: 4.8
-  },
-  {
-    id: 2,
-    title: "Office Cleaning Services",
-    description: "Commercial cleaning for offices and business spaces",
-    category: "Cleaning",
-    status: "pending",
-    views: 45,
-    inquiries: 3,
-    rating: 0
-  }
-];
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 
 const ProviderDashboard = () => {
-  const [services] = useState(mockProviderServices);
+  const { user } = useAuth();
 
-  const totalViews = services.reduce((sum, service) => sum + service.views, 0);
-  const totalInquiries = services.reduce((sum, service) => sum + service.inquiries, 0);
+  const { data: services = [], isLoading } = useQuery({
+    queryKey: ['provider-services', user?.id],
+    queryFn: async () => {
+      if (!user) return [];
+      
+      const { data, error } = await supabase
+        .from('services')
+        .select(`
+          *,
+          categories(name)
+        `)
+        .eq('provider_id', user.id)
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!user
+  });
+
+  const totalViews = services.reduce((sum, service) => sum + (service.views || 0), 0);
   const activeServices = services.filter(service => service.status === "active").length;
 
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-2 text-gray-600">Loading dashboard...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 pb-20">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
         <div className="flex justify-between items-center mb-8">
@@ -74,18 +82,20 @@ const ProviderDashboard = () => {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{totalViews}</div>
-              <p className="text-xs text-muted-foreground">This month</p>
+              <p className="text-xs text-muted-foreground">All time</p>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Inquiries</CardTitle>
+              <CardTitle className="text-sm font-medium">Pending Services</CardTitle>
               <TrendingUp className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{totalInquiries}</div>
-              <p className="text-xs text-muted-foreground">+12% from last month</p>
+              <div className="text-2xl font-bold">
+                {services.filter(s => s.status === 'pending').length}
+              </div>
+              <p className="text-xs text-muted-foreground">Awaiting approval</p>
             </CardContent>
           </Card>
 
@@ -95,8 +105,8 @@ const ProviderDashboard = () => {
               <Star className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">4.8</div>
-              <p className="text-xs text-muted-foreground">Across all services</p>
+              <div className="text-2xl font-bold">--</div>
+              <p className="text-xs text-muted-foreground">No reviews yet</p>
             </CardContent>
           </Card>
         </div>
@@ -110,39 +120,49 @@ const ProviderDashboard = () => {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              {services.map(service => (
-                <div key={service.id} className="flex items-center justify-between p-4 border rounded-lg">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-2">
-                      <h3 className="font-semibold">{service.title}</h3>
-                      <Badge variant={service.status === "active" ? "default" : "secondary"}>
-                        {service.status}
-                      </Badge>
+            {services.length === 0 ? (
+              <div className="text-center py-8">
+                <p className="text-gray-500 mb-4">You haven't posted any services yet.</p>
+                <Link to="/submit-service">
+                  <Button>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Post Your First Service
+                  </Button>
+                </Link>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {services.map(service => (
+                  <div key={service.id} className="flex items-center justify-between p-4 border rounded-lg">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-2">
+                        <h3 className="font-semibold">{service.title}</h3>
+                        <Badge variant={service.status === "active" ? "default" : "secondary"}>
+                          {service.status}
+                        </Badge>
+                        {service.categories && (
+                          <Badge variant="outline">{service.categories.name}</Badge>
+                        )}
+                      </div>
+                      <p className="text-gray-600 text-sm mb-2">{service.description}</p>
+                      <div className="flex items-center gap-4 text-sm text-gray-500">
+                        <span>{service.views || 0} views</span>
+                        {service.location && <span>{service.location}</span>}
+                        {service.price_range && <span>{service.price_range}</span>}
+                      </div>
                     </div>
-                    <p className="text-gray-600 text-sm mb-2">{service.description}</p>
-                    <div className="flex items-center gap-4 text-sm text-gray-500">
-                      <span>{service.views} views</span>
-                      <span>{service.inquiries} inquiries</span>
-                      {service.rating > 0 && (
-                        <span className="flex items-center">
-                          <Star className="h-3 w-3 text-yellow-400 fill-current mr-1" />
-                          {service.rating}
-                        </span>
-                      )}
+                    <div className="flex items-center gap-2">
+                      <Button variant="outline" size="sm">
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                      <Button variant="outline" size="sm">
+                        <Eye className="h-4 w-4" />
+                      </Button>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Button variant="outline" size="sm">
-                      <Edit className="h-4 w-4" />
-                    </Button>
-                    <Button variant="outline" size="sm">
-                      <Eye className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
